@@ -10,7 +10,7 @@ class Settingslogic < Hash
     def name # :nodoc:
       self.superclass != Hash && instance.key?("name") ? instance.name : super
     end
-        
+
     # Enables Settings.get('nested.key.name') for dynamic access
     def get(key)
       parts = key.split('.')
@@ -100,7 +100,7 @@ class Settingslogic < Hash
       self.replace hash_or_file
     else
       file_contents = open(hash_or_file).read
-      hash = file_contents.empty? ? {} : YAML.load(ERB.new(file_contents).result).to_hash
+      hash = file_contents.empty? ? {} : yaml_load(file_contents)
       if self.class.namespace
         hash = hash[self.class.namespace] or return missing_key("Missing setting '#{self.class.namespace}' in #{hash_or_file}")
       end
@@ -167,25 +167,40 @@ class Settingslogic < Hash
       end
     EndEval
   end
-  
+
   def symbolize_keys
-    
+
     inject({}) do |memo, tuple|
-      
+
       k = (tuple.first.to_sym rescue tuple.first) || tuple.first
-            
+
       v = k.is_a?(Symbol) ? send(k) : tuple.last # make sure the value is accessed the same way Settings.foo.bar works
-      
+
       memo[k] = v && v.respond_to?(:symbolize_keys) ? v.symbolize_keys : v #recurse for nested hashes
-      
+
       memo
     end
-    
+
   end
-  
+
   def missing_key(msg)
     return nil if self.class.suppress_errors
 
     raise MissingSetting, msg
+  end
+
+  private
+
+  def yaml_load(file_contents)
+    erb_content = ERB.new(file_contents).result
+
+    # Ruby 3.1 with Psych 4 allows yaml-aliases only in direct manner
+    yaml_content = if defined?(Psych::VERSION) && Psych::VERSION > '4.0'
+      YAML.safe_load(erb_content, permitted_classes: [Symbol, Date], aliases: true)
+    else
+      YAML.safe_load(erb_content, [], [], true)
+    end
+
+    yaml_content.to_hash
   end
 end
